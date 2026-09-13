@@ -2,3 +2,15 @@ geopy~=2.4.1
 Pillow~=12.3.0
 pillow-heif~=1.5.0
 pymediainfo~=7.0.1 
+
+# Geocoding library used to translate geographic coordinates into location names (e.g., city or country)
+geopy~=2.4.1
+
+# Core image processing library for opening, manipulating, and reading basic EXIF metadata
+Pillow~=12.3.0
+
+# Pillow plugin providing support for HEIF/HEIC image formats (common in smartphones)
+pillow-heif~=1.5.0
+
+# Wrapper for MediaInfo to extract comprehensive technical and descriptive metadata from video and image files
+pymediainfo~=7.0.1
