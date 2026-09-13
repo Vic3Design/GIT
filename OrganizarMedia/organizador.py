@@ -1,17 +1,18 @@
 """
-Script v0.1: Organizador de Multimedia Seguro
+Script v0.1.5: Organizador de Multimedia Seguro
 Descripción: Este script busca organizar carpetas de archivos multimedia 
-de forma práctica y segura, utilizando metadatos EXIF, control de tráfico 
+de forma práctica y segura, utilizando metadatos optenidos con pillow pymediainfo, control de tráfico 
 de red y seguridad criptográfica por hashing SHA-256 al 100% para garantizar 
 la integridad absoluta de los archivos originales en el proceso de reubicación.
 """
 
 import os
+import sys
 import shutil
 import time
 import hashlib
 from datetime import datetime
-from exif import Image
+from PIL import Image, ExifTags
 from geopy.geocoders import Nominatim
 from geopy.exc import GeocoderTimedOut, GeocoderServiceError
 
@@ -55,11 +56,11 @@ def convertir_a_decimal(coordenadas, referencia):
 
 def obtener_ciudad_con_cache(lat, lon):
     """
-    Gestiona la geolocalización inversa usando caché por aproximación (100m)
+    Gestiona la geolocalización inversa usando caché por aproximación (1000m)
     y rate-limiting estricto (0.9 req/s) para evitar bloqueos de la API.
     """
-    lat_aprox = round(lat, 3)
-    lon_aprox = round(lon, 3)
+    lat_aprox = round(lat, 2)
+    lon_aprox = round(lon, 2)
     llave_cache = f"{lat_aprox},{lon_aprox}"
 
     # Verificación en caché local (Evita llamadas redundantes a la red)
@@ -197,3 +198,4 @@ def procesar_archivos():
 if __name__ == "__main__":
     procesar_archivos()
     print("\nEjecución finalizada.")
+    input("Presiona Enter para salir...")
