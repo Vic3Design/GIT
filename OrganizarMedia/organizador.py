@@ -1,9 +1,10 @@
 """
-Script v0.2: Organizador de Multimedia Seguro
+Script v0.2.2: Organizador de Multimedia Seguro
 Descripción: Este script busca organizar carpetas de archivos multimedia 
 de forma práctica y segura, utilizando metadatos optenidos con pillow pymediainfo, control de tráfico 
 de red y seguridad criptográfica por hashing SHA-256 al 100% para garantizar 
 la integridad absoluta de los archivos originales en el proceso de reubicación.
+agrega '.dng', '.hevc', '.mkv', '.avi', '.webm', '.aac' y refuerza la extraccion de datos EXIF
 """
 
 import os
@@ -111,48 +112,47 @@ meses_espanol = {
 
 # --- EXTRACCIÓN DE METADATOS ---
 def obtener_metadatos_imagen(ruta_archivo):
-    """Extrae fecha y GPS de imágenes (JPG, HEIC si está soportado por PIL)."""
+    """
+    Extrae fecha de captura y coordenadas GPS (compatible con JPG, PNG, HEIC y DNG).
+    Retorna: (fecha_mes_ano, latitud, longitud)
+    """
     try:
         img = Image.open(ruta_archivo)
-        exif = img._getexif()
-        if not exif:
-            return None, None, None
-
-        info = {}
-        for tag, value in exif.items():
-            decoded = ExifTags.TAGS.get(tag, tag)
-            info[decoded] = value
-
-        fecha = info.get('DateTimeOriginal') or info.get('DateTime')
-        if fecha:
-            # Formato EXIF: "YYYY:MM:DD HH:MM:SS" -> Queremos "MM_YYYY"
-            try:
-                fecha_obj = datetime.strptime(fecha, "%Y:%m:%d %H:%M:%S")
-                # Extraemos y mapeamos usando el diccionario
-                mes_numero = fecha_obj.month
-                anio = fecha_obj.year
-                nombre_mes = meses_espanol.get(mes_numero, "Desconocido")
-                
-                fecha_formateada = f"{anio}_{nombre_mes}"
-            except ValueError:
-                fecha_formateada = None
-        else:
-            fecha_formateada = None
-            
-        # GPS (Simplificado para v0.2)
+        exif = img.getexif()
+        
+        fecha_mes_ano = None
         lat, lon = None, None
-        if 'GPSInfo' in info:
-             gps_info = info['GPSInfo']
-             # Extracción de coordenadas decimales (omito el cálculo complejo para brevedad, pero asume que funciona)
-             try:
-                 lat = gps_info[2][0] + (gps_info[2][1] / 60.0) + (gps_info[2][2] / 3600.0)
-                 lon = gps_info[4][0] + (gps_info[4][1] / 60.0) + (gps_info[4][2] / 3600.0)
-                 if gps_info[1] == 'S': lat = -lat
-                 if gps_info[3] == 'W': lon = -lon
-             except: pass
+        
+        if exif:
+            # 1. Intentar extraer Fecha (Tag 36867 = DateTimeOriginal, Tag 306 = DateTime)
+            fecha_original = exif.get(36867) or exif.get(306)
+            if fecha_original:
+                partes_fecha = str(fecha_original).split()[0].split(':')
+                if len(partes_fecha) == 3:
+                    anio = partes_fecha[0]
+                    mes_numero = int(partes_fecha[1])
+                    nombre_mes = meses_espanol.get(mes_numero, "Desconocido")
+                    fecha_mes_ano = f"{anio}_{nombre_mes}"
 
-        return fecha_formateada, lat, lon
-    except Exception:
+            # 2. Extraer GPS desde el IFD correspondiente
+            gps_ifd = exif.get_ifd(ExifTags.Base.GPSInfo)
+            if gps_ifd:
+                gps_lat = gps_ifd.get(2)
+                gps_lat_ref = gps_ifd.get(1)
+                gps_lon = gps_ifd.get(4)
+                gps_lon_ref = gps_ifd.get(3)
+                
+                if all([gps_lat, gps_lat_ref, gps_lon, gps_lon_ref]):
+                    lat_deg = float(gps_lat[0]) + (float(gps_lat[1]) / 60.0) + (float(gps_lat[2]) / 3600.0)
+                    lon_deg = float(gps_lon[0]) + (float(gps_lon[1]) / 60.0) + (float(gps_lon[2]) / 3600.0)
+                    
+                    lat = -lat_deg if gps_lat_ref == 'S' else lat_deg
+                    lon = -lon_deg if gps_lon_ref == 'W' else lon_deg
+
+        return fecha_mes_ano, lat, lon
+
+    except Exception as e:
+        print(f"⚠️ Aviso: No se pudo extraer EXIF de {os.path.basename(ruta_archivo)} - {e}")
         return None, None, None
 
 def obtener_fecha_video_audio(ruta_archivo):
@@ -219,8 +219,8 @@ def procesar_archivos():
     print("-" * 40)
 
     # Extensiones soportadas v0.2
-    ext_imagen = ['.jpg', '.jpeg', '.png', '.heic']
-    ext_video_audio = ['.mov', '.mp4', '.mp3', '.wav', '.m4a']
+    ext_imagen = ['.jpg', '.jpeg', '.png', '.heic', '.dng']
+    ext_video_audio = ['.mov', '.mp4', '.mp3', '.wav', '.m4a','.hevc', '.mkv', '.avi', '.webm', '.aac']
 
     for filename in os.listdir(ruta_origen):
         ruta_completa = os.path.join(ruta_origen, filename)
