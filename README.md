@@ -1,10 +1,10 @@
-# 📂 OrgMedia (v0.1)
+# 📂 OrgMedia (v0.2.2)
 
-[English](https://www.google.com/search?q=%23english) | [Español](https://www.google.com/search?q=%23espa%C3%B1ol)
+[English] | [Español]
 
 ---
 
-## 🇬🇧 English
+## us English
 
 Python script designed to automate the organization of multimedia files (photos and assets with EXIF metadata) into a clean **Location / Month_Year** directory structure.
 
