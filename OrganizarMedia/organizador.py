@@ -1,5 +1,5 @@
 """
-Script v0.2.2: Organizador de Multimedia Seguro
+Script v0.3: Organizador de Multimedia Seguro con ExifTool
 Descripción: Este script busca organizar carpetas de archivos multimedia 
 de forma práctica y segura, utilizando metadatos optenidos con pillow pymediainfo, control de tráfico 
 de red y seguridad criptográfica por hashing SHA-256 al 100% para garantizar 
@@ -9,15 +9,191 @@ agrega '.dng', '.hevc', '.mkv', '.avi', '.webm', '.aac' y refuerza la extraccion
 
 import os
 import sys
+import platform
+import urllib.request
+import zipfile
+import tarfile
 import shutil
 import time
 import hashlib
+import subprocess
 from datetime import datetime
 from PIL import Image, ExifTags
 from geopy.geocoders import Nominatim
 from geopy.exc import GeocoderTimedOut, GeocoderServiceError, GeocoderUnavailable
+try:
+    import exiftool  # type: ignore
+except ImportError:
+    exiftool = None # PyExifTool para extracción avanzada de metadatos de video
 
-# Opcional para leer metadatos de video/audio de forma robusta
+def get_exiftool_path():
+    """Retorna la ruta absoluta del binario local embebido en /tools."""
+    system = platform.system()
+    base_dir = os.path.join(os.path.dirname(__file__), "tools")
+    
+    if system == "Windows":
+        return os.path.join(base_dir, "win", "exiftool.exe")
+    elif system == "Darwin":
+        return os.path.join(base_dir, "mac", "exiftool")
+    elif system == "Linux":
+        return os.path.join(base_dir, "linux", "exiftool")
+    return None
+
+
+def check_exiftool_version(binary_path):
+    """Ejecuta 'exiftool -ver' y retorna la versión o None."""
+    if not binary_path:
+        return None
+    try:
+        result = subprocess.run(
+            [binary_path, "-ver"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=3
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except Exception:
+        pass
+    return None
+
+
+def download_and_extract_exiftool():
+    """Descarga y extrae el binario de ExifTool."""
+    system = platform.system()
+    binary_path = get_exiftool_path()
+    if not binary_path:
+        return False
+
+    base_dir = os.path.dirname(binary_path)
+    binary_name = os.path.basename(binary_path)
+    version_str = "13.10"
+
+    if system == "Windows":
+        url = f"https://exiftool.org/exiftool-{version_str}_64.zip"
+        is_zip = True
+    elif system == "Darwin":
+        url = f"https://exiftool.org/exiftool-{version_str}.zip"
+        is_zip = True
+    elif system == "Linux":
+        url = f"https://exiftool.org/Image-ExifTool-{version_str}.tar.gz"
+        is_zip = False
+    else:
+        return False
+
+    os.makedirs(base_dir, exist_ok=True)
+    temp_archive = os.path.join(base_dir, f"exiftool_temp.{'zip' if is_zip else 'tar.gz'}")
+
+    headers = {'User-Agent': 'Mozilla/5.0'}
+    req = urllib.request.Request(url, headers=headers)
+    
+    with urllib.request.urlopen(req, timeout=5) as response, open(temp_archive, 'wb') as out_file:
+        shutil.copyfileobj(response, out_file)
+
+    if is_zip:
+        with zipfile.ZipFile(temp_archive, 'r') as zip_ref:
+            zip_ref.extractall(base_dir)
+    else:
+        with tarfile.open(temp_archive, 'r:gz') as tar_ref:
+            tar_ref.extractall(base_dir)
+            
+        extracted_folder = None
+        for item in os.listdir(base_dir):
+            item_path = os.path.join(base_dir, item)
+            if os.path.isdir(item_path) and item.startswith("Image-ExifTool-"):
+                extracted_folder = item_path
+                break
+        
+        if extracted_folder:
+            for sub_item in os.listdir(extracted_folder):
+                shutil.move(os.path.join(extracted_folder, sub_item), os.path.join(base_dir, sub_item))
+            shutil.rmtree(extracted_folder)
+
+    if os.path.exists(temp_archive):
+        os.remove(temp_archive)
+
+    if system == "Windows":
+        for root, _, files in os.walk(base_dir):
+            for file in files:
+                if file.startswith("exiftool") and file.endswith(".exe") and file != binary_name:
+                    shutil.move(os.path.join(root, file), os.path.join(base_dir, binary_name))
+                    break
+
+    if system in ["Darwin", "Linux"] and os.path.exists(binary_path):
+        os.chmod(binary_path, 0o755)
+
+    return os.path.exists(binary_path)
+
+
+def check_periodic_updates(dias_intervalo=30):
+    """
+    Audita la versión local del ejecutable.
+    Retorna el modo de motor activo: 'exiftool' o 'pillow'.
+    """
+    archivo_registro = ".last_update"
+    fecha_actual = datetime.now()
+    
+    local_binary = get_exiftool_path()
+    local_version = check_exiftool_version(local_binary)
+    system_version = None if local_version else check_exiftool_version("exiftool")
+    active_version = local_version or system_version
+
+    debe_actualizar = False
+
+    if not active_version:
+        debe_actualizar = True
+    elif not os.path.exists(archivo_registro):
+        debe_actualizar = True
+    else:
+        with open(archivo_registro, "r") as f:
+            fecha_texto = f.read().strip()
+            try:
+                ultima_fecha = datetime.fromisoformat(fecha_texto)
+                if (fecha_actual - ultima_fecha).days >= dias_intervalo:
+                    debe_actualizar = True
+            except ValueError:
+                debe_actualizar = True
+
+    if debe_actualizar:
+        if not active_version:
+            print("\n⏳ Configurando el motor de metadatos por primera vez :)")
+        else:
+            print("\n⏳ Verificando actualizaciones de compatibilidad para cámaras y formatos :)")
+
+        try:
+            if download_and_extract_exiftool():
+                new_version = check_exiftool_version(local_binary)
+                print(f"✅ Motor de metadatos actualizado (v{new_version}).\n")
+                
+                # Guarda o actualiza la fecha en .last_update
+                with open(archivo_registro, "w") as f:
+                    f.write(fecha_actual.isoformat())
+                return "exiftool"
+            else:
+                raise Exception("Error en descarga/extracción")
+
+        except Exception:
+            if local_version:
+                print(f"ℹ️ Usando motor local existente (v{local_version}).\n")
+                return "exiftool"
+            elif system_version:
+                print(f"ℹ️ Usando motor del sistema (v{system_version}).\n")
+                return "exiftool"
+            else:
+                # FALLBACK A PILLOW: Sin ExifTool local, del sistema ni conexión
+                print("⚠️ ADVERTENCIA: No se pudo obtener ExifTool.")
+                print("   Se utilizará Pillow en modo de respaldo (solo imágenes básicas).")
+                print("   Los archivos de video y formatos avanzados no tendrán extracción de metadatos.\n")
+                return "pillow"
+    
+    return "exiftool"
+
+
+# Inicialización en organizador.py
+ENGINE_MODE = check_periodic_updates()
+
+# Leer metadatos de video/audio de forma robusta
 try:
     from pymediainfo import MediaInfo
     HAY_MEDIAINFO = True
